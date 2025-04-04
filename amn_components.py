@@ -53,86 +53,160 @@ class ModularUnit(nn.Module):
         # Initialized randomly; higher initial values (0.3 vs 0.1) might speed up initial learning
         self.weights = torch.rand(neurons, neurons, device=device) * 0.3
         # Learning rate for the simplified STDP rule - will be set by SIE
-        self.stdp_learning_rate = 0.03 # Default, can be overwritten
+        self.stdp_learning_rate = 0.03 # Default, can be overwritten (eta_effective)
+
+        # --- FUM STDP Parameters ---
+        self.A_plus = 0.1
+        self.A_minus = 0.12
+        self.tau_plus_inv = 1.0 / 20.0 # Inverse for efficiency (1/ms)
+        self.tau_minus_inv = 1.0 / 20.0 # Inverse for efficiency (1/ms)
+        self.gamma = 0.95 # Eligibility trace decay factor
+        # Eligibility trace tensor, initialized in init or first call
+        self.eligibility_trace = torch.zeros_like(self.weights)
+        self.lambda_decay = 1e-5 # Weight decay coefficient (small default value)
+        # --- End FUM STDP Parameters ---
+
 
     def forward(self, spikes_in):
         """Processes input spike train over `timesteps` using LIF dynamics."""
         logger.debug(f"ModularUnit FWD - Input shape: {spikes_in.shape}, Device: {spikes_in.device}")
         spikes_in = ensure_tensor(spikes_in, self.device)
+        logger.debug(f"  Ensured Input Device: {spikes_in.device}") # Add check
 
-        # Norse LIFRecurrent expects [batch_size, features] at each timestep
-        # We simulate timestep by timestep, assuming batch_size=1 implicitly
-        state = None  # Initial hidden state for the recurrent layer
-        spikes_out_list = [] # Collect output spikes over time
+        # --- Performance Optimization: Process sequence directly ---
+        # Input shape should be [timesteps, neurons]
+        # Add batch dimension: [timesteps, 1, neurons] for LIFRecurrent
+        if spikes_in.dim() != 2 or spikes_in.shape[0] != self.timesteps or spikes_in.shape[1] != self.neurons:
+             logger.warning(f"Unexpected input shape for sequence processing: {spikes_in.shape}. Expected [{self.timesteps}, {self.neurons}]")
+             # Fallback or raise error? For now, try adding batch dim anyway.
+             spikes_in_batch = spikes_in.unsqueeze(1)
+        else:
+             spikes_in_batch = spikes_in.unsqueeze(1) # Add batch dimension
 
-        for t in range(self.timesteps): # Use self.timesteps
-            # Input for this timestep should be [neurons]
-            current_spikes_t = spikes_in[t]
+        logger.debug(f"  Input shape to LIF layer (sequence): {spikes_in_batch.shape}")
 
-            # Reshape to [1, neurons] for Norse LIFRecurrent layer
-            current_spikes_batch = current_spikes_t.unsqueeze(0)
-            logger.debug(f"  T={t}, Input shape to LIF: {current_spikes_batch.shape}")
+        try:
+            # Process the whole sequence through the LIF layer
+            # Norse handles the recurrent state internally when processing sequences
+            output_spikes_batch, _ = self.lif(spikes_in_batch) # state is implicitly managed
+            logger.debug(f"  Output shape from LIF layer (sequence): {output_spikes_batch.shape}")
 
-            try:
-                # Process one timestep through the LIF layer
-                spike, state = self.lif(current_spikes_batch, state) # State is managed internally by Norse layer
-                logger.debug(f"  T={t}, Output spike shape from LIF: {spike.shape}")
+            # Remove batch dimension -> [timesteps, neurons]
+            output_spikes = output_spikes_batch.squeeze(1)
 
-                # Remove batch dimension -> [neurons]
-                spike_t = spike.squeeze(0)
-                spikes_out_list.append(spike_t)
+        except RuntimeError as e:
+            logger.error(f"RuntimeError in LIF sequence forward: {str(e)}", exc_info=True)
+            logger.error(f"  Input shape was: {spikes_in_batch.shape}")
+            raise
+        # --- End Performance Optimization ---
 
-            except RuntimeError as e:
-                logger.error(f"RuntimeError in LIF forward at timestep {t}: {str(e)}", exc_info=True)
-                logger.error(f"  Input shape was: {current_spikes_batch.shape}")
-                raise
-
-        # Stack the recorded spikes along the time dimension -> [timesteps, neurons]
-        output_spikes = torch.stack(spikes_out_list)
-        logger.debug(f"ModularUnit FWD - Output shape: {output_spikes.shape}")
+        logger.debug(f"ModularUnit FWD - Output shape: {output_spikes.shape}, Output Device: {output_spikes.device}") # Add check
         return output_spikes
 
     def apply_stdp(self, pre_spikes, post_spikes):
-        """Applies a simplified STDP rule based on concurrent firing."""
-        # Note: This is NOT standard time-difference STDP.
-        # It approximates Hebbian learning ("fire together, wire together")
-        # and anti-Hebbian learning based on *concurrent* activity within the same timestep.
-        logger.debug(f"Applying STDP - Pre shape: {pre_spikes.shape}, Post shape: {post_spikes.shape}")
+        """
+        Calculates STDP weight changes based on FUM's time-dependent rule
+        and updates the eligibility trace.
+        Assumes pre_spikes and post_spikes are [timesteps, neurons] tensors.
+        """
+        logger.debug(f"Applying FUM STDP - Pre shape: {pre_spikes.shape}, Post shape: {post_spikes.shape}")
 
-        # Ensure tensors are on the correct device (secondary GPU for units)
+        # Ensure tensors are on the correct device
         pre_spikes = pre_spikes.to(self.device)
         post_spikes = post_spikes.to(self.device)
 
-        dw = torch.zeros_like(self.weights) # Initialize weight change tensor
+        # --- Optimized STDP Calculation ---
+        # Find indices (timestep, neuron_index) where spikes occurred
+        pre_spike_indices = pre_spikes.nonzero(as_tuple=False)   # Shape [num_pre_spikes, 2]
+        post_spike_indices = post_spikes.nonzero(as_tuple=False) # Shape [num_post_spikes, 2]
 
-        for t in range(self.timesteps): # Use self.timesteps
-            pre_t = ensure_tensor(pre_spikes[t], self.device).squeeze() # Ensure [neurons]
-            post_t = ensure_tensor(post_spikes[t], self.device).squeeze() # Ensure [neurons]
+        if pre_spike_indices.numel() == 0 or post_spike_indices.numel() == 0:
+            # No pre or post spikes, no STDP changes
+            delta_w_step = torch.zeros_like(self.weights)
+        else:
+            # Extract times and neuron indices
+            t_pre = pre_spike_indices[:, 0].float()
+            i_pre = pre_spike_indices[:, 1]
+            t_post = post_spike_indices[:, 0].float()
+            j_post = post_spike_indices[:, 1]
 
-            # Check if tensors are valid 1D tensors after ensuring
-            if pre_t.dim() != 1 or post_t.dim() != 1:
-                 logger.error(f"STDP Error T={t}: Invalid dimensions after ensure/squeeze. Pre: {pre_t.shape}, Post: {post_t.shape}")
-                 continue # Skip this timestep if shapes are wrong
+            # Calculate all pairwise time differences using broadcasting
+            # delta_t[k, l] = t_post[l] - t_pre[k]
+            delta_t = t_post.unsqueeze(0) - t_pre.unsqueeze(1) # Shape [num_pre_spikes, num_post_spikes]
 
-            try:
-                # Hebbian term: Increase weight if pre and post spike concurrently
-                dw += self.stdp_learning_rate * torch.outer(pre_t, post_t)
-                # Anti-Hebbian term: Decrease weight if post spikes while pre doesn't (simplified)
-                # Note: Original had torch.outer(post_t, pre_t) which is mathematically the transpose of Hebbian term.
-                # Using same term `outer(pre_t, post_t)` but subtracting might be intended,
-                # or maybe `outer(post_t, pre_t)` implies LTD if post fires before pre in *next* step?
-                # Sticking to original code's implementation:
-                dw -= self.stdp_learning_rate * 0.12 * torch.outer(post_t, pre_t) # Asymmetry factor 0.12
-            except RuntimeError as e:
-                logger.error(f"Error in STDP torch.outer at timestep {t}: {e}", exc_info=True)
-                logger.error(f"  Pre shape: {pre_t.shape}, Post shape: {post_t.shape}")
-                raise
+            # Calculate potential LTP and LTD values for all pairs
+            ltp_pot = self.A_plus * torch.exp(-delta_t * self.tau_plus_inv)
+            ltd_pot = -self.A_minus * torch.exp(delta_t * self.tau_minus_inv)
 
-        # Apply accumulated weight changes
-        self.weights += dw
-        # Keep weights within a reasonable range (e.g., preventing negative or excessively large weights)
-        self.weights.clamp_(0.0, 1.0)
-        logger.debug("Applied STDP and clamped weights.")
+            # Apply masks based on time difference
+            ltp_mask = delta_t > 0
+            ltd_mask = delta_t < 0
+
+            # Combine LTP and LTD contributions, zeroing out where masks are false
+            delta_w_pairs = torch.zeros_like(delta_t)
+            delta_w_pairs[ltp_mask] = ltp_pot[ltp_mask]
+            delta_w_pairs[ltd_mask] = ltd_pot[ltd_mask] # Note: LTD is already negative
+
+            # Map pair contributions back to the weight matrix delta_w_step[i, j]
+            # This requires efficient indexing or scatter operations.
+            # Using scatter_add_ for accumulation.
+            delta_w_step = torch.zeros_like(self.weights)
+            # Create indices for scatter_add: pre_indices (i) repeated, post_indices (j) tiled
+            pre_indices_expanded = i_pre.unsqueeze(1).expand(-1, j_post.shape[0]) # Shape [num_pre, num_post]
+            post_indices_expanded = j_post.unsqueeze(0).expand(i_pre.shape[0], -1) # Shape [num_pre, num_post]
+
+            # Flatten indices and values for scatter_add
+            # We need to accumulate delta_w_pairs[k, l] into delta_w_step[i_pre[k], j_post[l]]
+            # scatter_add_ needs 1D index tensor. We map (i, j) to flat index: i * num_neurons + j
+            flat_indices = pre_indices_expanded * self.neurons + post_indices_expanded
+            # Use index_add_ which is often more robust than scatter_add_ for this
+            delta_w_step.view(-1).index_add_(0, flat_indices.view(-1), delta_w_pairs.view(-1))
+
+            # Mask out self-connections (i == j)
+            # Create a mask for diagonal elements
+            diag_mask = torch.eye(self.neurons, device=self.device, dtype=torch.bool)
+            delta_w_step[diag_mask] = 0.0
+
+            # TODO: Add logic for inhibitory STDP rules if neuron types are introduced
+
+        # Update eligibility trace: e(t) = gamma * e(t-1) + delta_w(t)
+        # Ensure trace is on the correct device
+        self.eligibility_trace = self.eligibility_trace.to(self.device)
+        self.eligibility_trace = self.gamma * self.eligibility_trace + delta_w_step
+        logger.debug(f"Updated eligibility trace. Mean trace value: {self.eligibility_trace.mean().item():.6f}")
+
+        # Note: Weights are NOT updated here, only in update_weights()
+
+    def update_weights(self, reward):
+        """Applies the final weight update based on reward and eligibility trace."""
+        # Ensure reward is a scalar or compatible tensor
+        if isinstance(reward, torch.Tensor):
+            reward_val = reward.item() # Use item() if it's a single-element tensor
+        else:
+            reward_val = reward # Assume scalar
+
+        # --- Implement FUM Reward Modulation (Sec C.7) ---
+        # Map reward to modulation factor [-1, 1]
+        # Ensure reward_val is a tensor for sigmoid
+        reward_tensor = torch.tensor(reward_val, device=self.device, dtype=torch.float32)
+        mod_factor = 2 * torch.sigmoid(reward_tensor) - 1
+        # Calculate effective learning rate
+        eta_effective = self.stdp_learning_rate * (1 + mod_factor)
+        # Calculate final weight delta (quadratic scaling) including weight decay
+        reward_modulated_trace = eta_effective * reward_tensor * self.eligibility_trace
+        weight_decay_term = -self.lambda_decay * self.weights # L2 decay term
+        delta_w = reward_modulated_trace + weight_decay_term
+        # --- End FUM Reward Modulation ---
+
+        # Apply weight change
+        self.weights += delta_w
+        # Clamp weights
+        self.weights.clamp_(-1, 1) # Clamp between -1 and 1 as per FUM docs
+        logger.debug(f"Updated weights using reward {reward_val:.4f}. Mean delta_w: {delta_w.mean().item():.6f}")
+
+        # Reset trace after weight update? FUM docs imply trace persists but is used by reward.
+        # Let's not reset for now, allowing accumulation across steps if needed.
+        # self.eligibility_trace.zero_()
 
 
 # 2. Global Coordinator: Determines inter-unit connections using a standard NN
@@ -143,8 +217,14 @@ class CoordinatorPolicyNetwork(nn.Module):
         self.device = device
         self.num_units = num_units
         self.neurons_per_unit = neurons_per_unit
-        input_size = num_units * neurons_per_unit # Flattened activity across all units
-        hidden_size = 128
+        # --- FIX: Update input_size based on full spatio-temporal pattern ---
+        # Assuming timesteps is accessible or passed; for now, hardcoding based on config
+        # TODO: Pass timesteps to Coordinator init if it becomes variable
+        timesteps = 50 # Hardcoded based on current config in train_amn_prototype.py
+        input_size = num_units * timesteps * neurons_per_unit # Flattened full spike pattern
+        logger.info(f"CoordinatorPolicyNetwork initialized with input size: {input_size}")
+        # --- End FIX ---
+        hidden_size = 128 # Keep hidden size for now, might need adjustment
         output_size = num_units * num_units # Output one probability per potential connection
 
         self.actor = nn.Sequential(
@@ -163,8 +243,15 @@ class CoordinatorPolicyNetwork(nn.Module):
         if activity.dim() == 1:
              activity = activity.unsqueeze(0) # Add batch dim if needed
         # Flatten features if necessary (e.g., if input is [batch, units, neurons])
-        activity_flat = activity.view(original_batch_size, -1)
-        logger.debug(f"  Activity reshaped to: {activity_flat.shape}")
+        # Input 'activity' is now expected to be already flattened [1, features] from AMN.forward
+        activity_flat = activity # Assume input is already [1, features]
+        # Check if input needs flattening (e.g., if batch > 1 in future)
+        if activity.dim() > 2:
+             activity_flat = activity.view(original_batch_size, -1)
+        elif activity.dim() == 1: # Add batch dim if somehow lost
+             activity_flat = activity.unsqueeze(0)
+
+        logger.debug(f"  Coordinator input shape (should be flat): {activity_flat.shape}")
 
         # Pass through the MLP
         connection_probs_flat = self.actor(activity_flat) # Output: [batch_size, num_units * num_units]
@@ -202,14 +289,14 @@ class SelfImprovementEngine:
     def __init__(self, amn_network, initial_lr=0.03, update_interval=2, improvement_threshold=0.001):
         self.amn = amn_network # Reference to the main AMN model
         self.performance_history = []
-        self.learning_rate = initial_lr          # Initial STDP learning rate
+        self.base_eta = initial_lr                 # Base STDP learning rate (eta)
         self.improvement_threshold = improvement_threshold # Min loss decrease to be considered 'improving'
         self.update_interval = update_interval           # How many epochs to look back for trend
 
-        # Set initial learning rate in all units
+        # Set initial base learning rate in all units
         for unit in self.amn.units:
-            unit.stdp_learning_rate = self.learning_rate
-        logger.info(f"SIE initialized with STDP learning rate {self.learning_rate:.3f}")
+            unit.stdp_learning_rate = self.base_eta # unit.stdp_learning_rate now stores base eta
+        logger.info(f"SIE initialized with base STDP learning rate (eta) {self.base_eta:.4f}")
 
     def update(self, current_loss):
         """Updates STDP learning rate if loss is not decreasing sufficiently."""
@@ -221,12 +308,12 @@ class SelfImprovementEngine:
 
             # If loss increased or didn't decrease enough (trend >= -threshold)
             if trend >= -self.improvement_threshold:
-                # Increase learning rate slightly (capped at 0.1)
-                self.learning_rate = min(0.1, self.learning_rate + 0.02)
-                # Apply updated rate to all units
+                # Increase base learning rate slightly (capped at 0.05)
+                self.base_eta = min(0.05, self.base_eta + 0.02) # Capped at 0.05
+                # Apply updated base rate to all units
                 for unit in self.amn.units:
-                    unit.stdp_learning_rate = self.learning_rate
-                logger.info(f"SIE: Increased STDP learning rate to {self.learning_rate:.3f} (Trend={trend:.4f})")
+                    unit.stdp_learning_rate = self.base_eta # Update the base eta stored in unit
+                logger.info(f"SIE: Increased base STDP learning rate (eta) to {self.base_eta:.4f} (Trend={trend:.4f})")
             else:
                 # Log if improvement is good
-                logger.info(f"SIE: STDP learning rate stable at {self.learning_rate:.3f} (Good Trend={trend:.4f})")
+                logger.info(f"SIE: Base STDP learning rate (eta) stable at {self.base_eta:.4f} (Good Trend={trend:.4f})")

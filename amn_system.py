@@ -37,13 +37,14 @@ class AMN(nn.Module):
 
     def forward(self, input_spikes):
         """Processes input spikes through units, coordinates connections, combines outputs."""
-        logger.debug(f"AMN FWD - Input shape: {input_spikes.shape}, Device: {input_spikes.device}")
+        logger.debug(f"AMN FWD - Initial Input shape: {input_spikes.shape}, Device: {input_spikes.device}")
         input_spikes = ensure_tensor(input_spikes, device=self.device_secondary) # Ensure input is on secondary for units
+        logger.debug(f"  Input Device after ensure: {input_spikes.device}")
 
         active_units = list(range(self.num_units))
-        # Activity tensor to store mean firing rate per unit, placed on primary device for coordinator
-        activity = torch.zeros(self.num_units, self.neurons_per_unit, device=self.device_primary)
-        self.unit_outputs = [] # Reset outputs list
+        # List to store full spike outputs from each unit
+        all_unit_outputs_list = []
+        self.unit_outputs = [] # Keep this for STDP if re-enabled later
 
         # --- Heuristic: Calculate target output rate for direct mapping ---
         input_rate = get_spike_rate(input_spikes.to(torch.device('cpu')), self.neurons_per_unit) # Rate calc likely needs CPU tensor
@@ -58,20 +59,35 @@ class AMN(nn.Module):
             # Input spikes should already be on unit.device (secondary)
             try:
                 output = unit(input_spikes) # Get output spike train [timesteps, neurons]
-                self.unit_outputs.append(output)
-                # Calculate mean activity over time, move result to primary device for coordinator
-                activity[i] = output.mean(dim=0).to(self.device_primary)
+                self.unit_outputs.append(output) # Keep for potential STDP re-enablement
+                # Move full output to primary device for coordinator input
+                all_unit_outputs_list.append(output.to(self.device_primary))
+                logger.debug(f"  Unit {i} Full Output Device: {output.device}, Copied to Device: {all_unit_outputs_list[-1].device}")
             except Exception as e:
                 logger.error(f"Error processing unit {i}: {e}", exc_info=True)
                 raise
 
-        # 2. Get dynamic connection matrix from the coordinator based on unit activity
+        # 2. Get dynamic connection matrix from the coordinator based on full unit outputs
         try:
-            # Activity shape should be [num_units, neurons_per_unit] before passing
-            logger.debug(f"  Activity shape for coordinator: {activity.shape}")
-            connection_matrix_sampled, _ = self.coordinator.get_action(activity) # Get binary connections [1, units, units]
+            # Concatenate and flatten all unit outputs [units, timesteps, neurons] -> [1, units*timesteps*neurons]
+            if not all_unit_outputs_list:
+                 raise ValueError("No unit outputs collected for coordinator.")
+
+            # Stack along a new dimension (batch dim, effectively) -> [num_units, timesteps, neurons]
+            full_activity_tensor = torch.stack(all_unit_outputs_list, dim=0)
+            logger.debug(f"  Stacked full activity shape: {full_activity_tensor.shape}, Device: {full_activity_tensor.device}")
+
+            # Flatten into a single vector for the coordinator MLP input
+            # Add batch dimension [1, features]
+            coordinator_input = full_activity_tensor.view(1, -1)
+            logger.debug(f"  Flattened coordinator input shape: {coordinator_input.shape}, Device: {coordinator_input.device}")
+
+            # Get action (sampled matrix) and log probabilities from coordinator
+            connection_matrix_sampled, log_probs = self.coordinator.get_action(coordinator_input) # Pass flattened full spike data
             self.connection_matrix = connection_matrix_sampled # Store the sampled matrix
-            logger.debug(f"  Connection matrix shape: {self.connection_matrix.shape}")
+            self.connection_log_probs = log_probs # Store log_probs for use in train_step
+            logger.debug(f"  Connection matrix shape: {self.connection_matrix.shape}, Device: {self.connection_matrix.device}")
+            logger.debug(f"  Log Probs shape: {self.connection_log_probs.shape}, Device: {self.connection_log_probs.device}")
         except Exception as e:
             logger.error(f"Error getting action from coordinator: {e}", exc_info=True)
             raise
@@ -123,6 +139,7 @@ class AMN(nn.Module):
             # --- End Heuristic ---
 
             # --- Heuristic: Boost output activation if too low ---
+            # --- RE-ENABLED Boosting Heuristic ---
             # Ensure the network output has sufficient activity to represent the target rate
             if final_output.mean() < 0.2: # Threshold for minimum acceptable mean activation
                 current_mean = final_output.mean().item()
@@ -134,7 +151,7 @@ class AMN(nn.Module):
                     bias = torch.rand_like(final_output) * boost_factor * 2.0 # Stronger boost scaling
                     final_output += bias
                     logger.debug(f"  Output after boosting: Mean={final_output.mean():.4f}")
-            # --- End Heuristic ---
+            # --- END RE-ENABLED Boosting Heuristic ---
 
             logger.debug(f"AMN FWD - Final output shape: {final_output.shape}, Device: {final_output.device}")
             return final_output
@@ -148,62 +165,76 @@ class AMN(nn.Module):
             logger.error(f"  Final output (partial) - Shape: {final_output.shape}, Device: {final_output.device}")
             raise
 
-    def train_step(self, input_spikes, target_spikes, optimizer, epoch=0):
-        """Performs one training step including forward pass, loss calculation, backprop, and STDP."""
-        logger.debug(f"AMN Train Step {epoch} - Input shape: {input_spikes.shape}, Target shape: {target_spikes.shape}")
+    def train_step(self, input_spikes, target_spikes, optimizer, epoch=0, baseline=0.0): # Added baseline argument
+        """Performs one training step using Policy Gradient (REINFORCE with baseline)."""
+        logger.debug(f"AMN Train Step {epoch} - Input shape: {input_spikes.shape}, Target shape: {target_spikes.shape}, Baseline: {baseline:.4f}")
 
         # --- Heuristic: Anneal direct mapping influence ---
         # Gradually reduce the influence of the hardcoded rule over epochs
         if self.use_direct_mapping and self.direct_weight > 0.5: # Stop reducing below 0.5
-            self.direct_weight *= 0.998 # Slow exponential decay
+            self.direct_weight *= 0.995 # Faster exponential decay (tuned from 0.998)
             logger.debug(f"  Annealed direct_weight to {self.direct_weight:.3f}")
         # --- End Heuristic ---
 
         # 1. Forward pass through the AMN
         output_spikes = self(input_spikes)
 
-        # 2. Calculate loss (MSE between mean firing rates)
-        # Move target spikes to the output device (secondary GPU)
-        target_mean = target_spikes.mean(dim=0).to(output_spikes.device)
-        output_mean = output_spikes.mean(dim=0)
-
-        # Ensure shapes match for loss calculation
-        if output_mean.shape != target_mean.shape:
-             logger.error(f"Shape mismatch for loss: Output mean {output_mean.shape}, Target mean {target_mean.shape}")
-             # Handle error appropriately, maybe raise or return NaN loss
-             return float('nan'), float('nan')
-
-        loss = nn.MSELoss()(output_mean, target_mean)
-        loss_item = loss.item() # Get scalar loss value for logging/SIE
-
-        # Log output rate vs target rate for debugging progress
+        # 2. Calculate Reward based on Output Rate
         output_rate = get_spike_rate(output_spikes.to(torch.device('cpu')), self.neurons_per_unit)
-        target_rate = get_spike_rate(target_spikes.to(torch.device('cpu')), self.neurons_per_unit)
-        if epoch % 10 == 0:
-            logger.debug(f"  Epoch {epoch}: Output rate={output_rate:.2f} Hz, Target rate={target_rate:.2f} Hz, Loss={loss_item:.4f}")
+        # We need the original input number to calculate the target rate for the reward
+        # This assumes train_step is called with context or modified to receive input_num
+        # For now, we'll retrieve it from the target_spikes encoding (less robust)
+        # A better way would be to pass input_num to train_step
+        target_rate_approx = get_spike_rate(target_spikes.to(torch.device('cpu')), self.neurons_per_unit)
+        # Simple reward: higher for closer rates, max 1.0
+        reward = 1.0 / (1.0 + abs(output_rate - target_rate_approx))
+        logger.debug(f"  Reward Calculation: Output Rate={output_rate:.2f}, Target Rate={target_rate_approx:.2f}, Reward={reward:.4f}")
 
-        # 3. Backpropagation for the Coordinator Network
+        # 3. Calculate Policy Gradient Loss for Coordinator
+        # Use the stored log_probs from the forward pass
+        if not hasattr(self, 'connection_log_probs') or self.connection_log_probs is None:
+             logger.error("Log probabilities (self.connection_log_probs) not found for policy gradient calculation.")
+             # Handle error: maybe return NaN or skip update
+             return float('nan'), output_rate, reward # Return NaN loss, but still return reward
+
+        # Ensure reward and baseline are tensors on the correct device
+        reward_tensor = torch.tensor(reward, device=self.device_primary, dtype=torch.float32)
+        baseline_tensor = torch.tensor(baseline, device=self.device_primary, dtype=torch.float32)
+
+        # Policy Gradient Loss (REINFORCE with baseline): -log_prob * (reward - baseline)
+        # Sum over the action matrix dimensions and average over batch (batch=1 here)
+        advantage = reward_tensor - baseline_tensor
+        policy_loss = (-self.connection_log_probs * advantage.detach()).mean() # Detach advantage to prevent grads flowing into baseline calc
+        loss_item = policy_loss.item() # Use policy loss for logging/SIE
+        logger.debug(f"  Policy Gradient Loss calculated: {loss_item:.4f} (Advantage: {advantage.item():.4f})")
+
         # Zero gradients for the coordinator's optimizer
         optimizer.zero_grad()
-        # Calculate gradients based on the loss
-        # Note: Gradients only flow back through operations involving coordinator outputs
-        # (i.e., the weighted sum using connection_matrix). STDP happens separately.
+        # Calculate gradients based on the policy loss
         try:
-             loss.backward()
+             policy_loss.backward()
         except RuntimeError as e:
-             logger.error(f"Error during loss.backward(): {e}", exc_info=True)
-             # Log shapes again right before backward pass
-             logger.error(f"  Output mean shape: {output_mean.shape}, Target mean shape: {target_mean.shape}")
+             logger.error(f"Error during policy_loss.backward(): {e}", exc_info=True)
+             # Log relevant shapes
+             logger.error(f"  Log Probs shape: {self.connection_log_probs.shape if hasattr(self, 'connection_log_probs') else 'Not found'}")
              raise
         # Update coordinator weights
         optimizer.step()
 
-        # 4. Apply STDP rule to each Modular Unit
-        # Note: This happens *after* backprop, using the same input spikes
-        # and the unit outputs generated *before* the coordinator was updated.
+        # 4. Apply STDP rule and update weights for each Modular Unit
+        # --- RE-ENABLED FUM STDP ---
+        # Note: This happens *after* policy gradient update.
         for i, unit in enumerate(self.units):
-            pre_spikes_on_device = input_spikes.to(unit.device)
+            # Ensure input_spikes is on the correct device for apply_stdp if needed
+            # (apply_stdp currently handles internal .to(device))
             unit_output = self.unit_outputs[i] # Use stored output from forward pass
-            unit.apply_stdp(pre_spikes_on_device, unit_output)
 
-        return loss_item, output_rate
+            # Calculate STDP changes and update eligibility trace
+            unit.apply_stdp(input_spikes, unit_output)
+
+            # Apply final weight update using the reward
+            # Pass the scalar reward value
+            unit.update_weights(reward)
+        # --- END RE-ENABLED FUM STDP ---
+
+        return loss_item, output_rate, reward # Return reward for baseline update

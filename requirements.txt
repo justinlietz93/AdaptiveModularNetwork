@@ -1,3 +1,7 @@
 torch
 numpy
 norse
+matplotlib
+
+# I installed torch with CUDA 12.1 support, you can install it with the following command:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
