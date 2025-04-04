@@ -1,7 +1,7 @@
 import torch
 import torch
 import logging
-from utils import encode_number, get_spike_rate # Assuming utils.py is in the same directory
+from utils import encode_number, get_spike_rate, encode_sequence # Assuming utils.py is in the same directory
 import numpy as np # For calculations
 import os # For path joining and directory creation
 import time # For timestamp in log file
@@ -10,23 +10,27 @@ logger = logging.getLogger(__name__)
 
 # 6. Tests and Evaluation (Renumbered from original script)
 def run_tests(amn_model, test_cases, timesteps, neurons_per_unit, device_secondary):
-    """Runs simple generalization tests (e.g., input 1 -> output 3)."""
-    logger.info("--- Running Generalization Tests ---")
-    # Test cases: List of tuples [(input_number, expected_output_number)]
+    """Runs generalization tests for the sequence prediction task."""
+    logger.info("--- Running Generalization Tests (Sequence Task) ---")
+    # Test cases: List of tuples [((input_seq), target_number)]
     results = []
     amn_model.eval() # Set model to evaluation mode
     with torch.no_grad(): # Disable gradient calculation for testing
-        for x_input, target_output in test_cases:
-            input_spikes = encode_number(x_input, timesteps, neurons_per_unit, device_secondary)
+        for input_seq, target_num in test_cases: # Unpack sequence and target number
+            # Use encode_sequence for the input
+            input_spikes = encode_sequence(input_seq, timesteps, neurons_per_unit, device_secondary)
             # Pass input through the trained AMN
             output_spikes = amn_model(input_spikes)
             # Decode the output spike rate
             output_rate_hz = get_spike_rate(output_spikes.to(torch.device('cpu')), neurons_per_unit)
-            target_rate_hz = target_output * 10.0 # Target rate based on encoding
+            # Calculate target rate based on the target number
+            target_rate_hz = target_num * 10.0 # Target rate based on encoding
             # Calculate relative error
             error = abs(output_rate_hz - target_rate_hz) / target_rate_hz if target_rate_hz != 0 else float('inf')
-            results.append((x_input, target_output, output_rate_hz, error))
-            logger.info(f"  Test: Input={x_input}, Target={target_rate_hz:.1f} Hz, Output={output_rate_hz:.2f} Hz, Error={error:.2%}")
+            # Store sequence as input in results
+            results.append((input_seq, target_num, output_rate_hz, error))
+            # Update log message for sequence
+            logger.info(f"  Test: Input={input_seq}, Target={target_rate_hz:.1f} Hz, Output={output_rate_hz:.2f} Hz, Error={error:.2%}")
     amn_model.train() # Set model back to training mode
     return results
 

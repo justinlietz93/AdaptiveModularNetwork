@@ -31,37 +31,52 @@ def ensure_tensor(x, device=None):
 
     return x
 
+def _encode_single_number_rate(n, duration, neurons_per_unit, device):
+    """Internal helper to encode a single number for a specific duration."""
+    spikes = torch.zeros(duration, neurons_per_unit, device=device)
+    target_rate = min(n * 10.0, 50.0) # Cap rate at 50Hz
+    spike_prob = target_rate / 100.0 # Probability per timestep
+
+    for t in range(duration):
+        spikes[t] = (torch.rand(neurons_per_unit, device=device) < spike_prob).float()
+    logger.debug(f"Encoded number {n} for {duration} steps -> Rate {target_rate:.1f} Hz")
+    return spikes
+
 def encode_number(n, timesteps, neurons_per_unit, device):
     """
-    Encodes a number n into a simple rate-coded spike train.
-    Target rate is n * 10 Hz, capped at 50 Hz.
-    Spikes are generated probabilistically based on this rate.
+    Encodes a single number n into a simple rate-coded spike train over all timesteps.
+    (Calls internal helper)
+    """
+    return _encode_single_number_rate(n, timesteps, neurons_per_unit, device)
+
+def encode_sequence(sequence, timesteps, neurons_per_unit, device):
+    """
+    Encodes a sequence of numbers by presenting each sequentially within the total timesteps.
+    Currently supports sequences of length 2.
 
     Args:
-        n (float): Number to encode.
-        timesteps (int): Duration of the simulation step.
+        sequence (list or tuple): Sequence of numbers to encode (e.g., [1, 2]).
+        timesteps (int): Total duration of the simulation step.
         neurons_per_unit (int): Number of neurons in the unit.
         device (torch.device): Target device.
 
     Returns:
         torch.Tensor: Spike tensor [timesteps, neurons_per_unit] on the specified device.
     """
-    spikes = torch.zeros(timesteps, neurons_per_unit, device=device)
-    # Map number n to a firing rate (Hz), e.g., n=3 -> 30Hz
-    target_rate = min(n * 10.0, 50.0) # Cap rate at 50Hz
+    if len(sequence) != 2:
+        raise NotImplementedError("encode_sequence currently only supports sequences of length 2.")
 
-    # Generate Poisson-like spikes for each timestep
-    # Probability of spiking = target_rate / 1000 (assuming 1ms timestep implicitly)
-    # The original code uses rate / 100, maybe dt is assumed differently or just scaling factor?
-    # Sticking to original code's scaling for now: prob = rate / 100
-    spike_prob = target_rate / 100.0
+    duration_per_num = timesteps // 2
+    remaining_timesteps = timesteps - (duration_per_num * 2) # Handle odd timesteps
 
-    for t in range(timesteps):
-        spikes[t] = (torch.rand(neurons_per_unit, device=device) < spike_prob).float()
+    spikes1 = _encode_single_number_rate(sequence[0], duration_per_num, neurons_per_unit, device)
+    spikes2 = _encode_single_number_rate(sequence[1], duration_per_num + remaining_timesteps, neurons_per_unit, device) # Add remainder to last part
 
-    logger.debug(f"Encoded number {n} -> Rate {target_rate:.1f} Hz -> Spike Prob {spike_prob:.3f}")
-    logger.debug(f"  Output spikes shape: {spikes.shape}, Device: {spikes.device}, Mean spikes: {spikes.mean():.3f}")
-    return spikes
+    # Concatenate along the time dimension
+    full_sequence_spikes = torch.cat((spikes1, spikes2), dim=0)
+    logger.debug(f"Encoded sequence {sequence} -> Shape: {full_sequence_spikes.shape}")
+    return full_sequence_spikes
+
 
 def get_spike_rate(spikes, neurons_per_unit):
     """

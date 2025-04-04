@@ -1,0 +1,330 @@
+--- Analysis Log: 2025-04-04 04:21:20 ---
+Overall Result: FAILURE
+Epochs Run: 113
+Minimum Loss Achieved: 0.0087
+Final Loss (Best Model): 0.0102
+Final Output Rate (Best Model): 52.21 Hz
+Final STDP Learning Rate: 0.1000
+Average Epoch Time: 0.152 seconds
+Final Inference Check Time: 0.070 seconds
+Generalization Test Time: 0.11 seconds
+Total Runtime: 18 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=30.46 Hz, Error=1.52%
+  Input=4, Target=60.0 Hz, Output=50.13 Hz, Error=16.45%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:22:30 ---
+Overall Result: SUCCESS
+Epochs Run: 48
+Minimum Loss Achieved: 0.0096
+Final Loss (Best Model): 0.0096
+Final Output Rate (Best Model): 51.08 Hz
+Final STDP Learning Rate: 0.1000
+Average Epoch Time: 0.161 seconds
+Final Inference Check Time: 0.056 seconds
+Generalization Test Time: 0.11 seconds
+Total Runtime: 9 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=30.76 Hz, Error=2.54%
+  Input=4, Target=60.0 Hz, Output=50.43 Hz, Error=15.96%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:32:29 ---
+Overall Result: FAILURE
+Epochs Run: 191
+Minimum Loss Achieved: 0.0091
+Final Loss (Best Model): 0.0482
+Final Output Rate (Best Model): 26.49 Hz
+Final STDP Learning Rate: 0.1000
+Average Epoch Time: 1.697 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 326 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:40:42 ---
+Overall Result: FAILURE
+Epochs Run: 38
+Minimum Loss Achieved: 0.0092
+Final Loss (Best Model): 0.0485
+Final Output Rate (Best Model): 26.71 Hz
+Final STDP Learning Rate: 0.1000
+Average Epoch Time: 5.463 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 213 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:42:55 ---
+Overall Result: FAILURE
+Epochs Run: 25
+Minimum Loss Achieved: 0.0092
+Final Loss (Best Model): 0.0496
+Final Output Rate (Best Model): 26.50 Hz
+Final STDP Learning Rate: 0.1000
+Average Epoch Time: 5.028 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 127 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:49:42 ---
+Overall Result: FAILURE
+Epochs Run: 73
+Minimum Loss Achieved: 0.0256
+Final Loss (Best Model): 0.0268
+Final Output Rate (Best Model): 54.90 Hz
+Final STDP Learning Rate: 0.1000
+Average Epoch Time: 4.921 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 363 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:57:13 ---
+Overall Result: FAILURE
+Epochs Run: 88
+Minimum Loss Achieved: 0.0256
+Final Loss (Best Model): 0.0272
+Final Output Rate (Best Model): 55.07 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.978 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 444 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 04:59:15 ---
+Overall Result: FAILURE
+Epochs Run: 21
+Minimum Loss Achieved: 0.3646
+Final Loss (Best Model): 0.3675
+Final Output Rate (Best Model): 54.82 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.931 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 109 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:03:51 ---
+Overall Result: FAILURE
+Epochs Run: 53
+Minimum Loss Achieved: 0.3646
+Final Loss (Best Model): 0.3677
+Final Output Rate (Best Model): 54.84 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.963 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 269 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:05:46 ---
+Overall Result: FAILURE
+Epochs Run: 22
+Minimum Loss Achieved: 0.3646
+Final Loss (Best Model): 0.3659
+Final Output Rate (Best Model): 54.73 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.328 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 97 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:08:51 ---
+Overall Result: FAILURE
+Epochs Run: 21
+Minimum Loss Achieved: 0.3646
+Final Loss (Best Model): 0.3675
+Final Output Rate (Best Model): 54.82 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.448 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 96 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:10:24 ---
+Overall Result: FAILURE
+Epochs Run: 19
+Minimum Loss Achieved: 0.4399
+Final Loss (Best Model): 0.4399
+Final Output Rate (Best Model): 0.00 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.407 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 88 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:13:39 ---
+Overall Result: FAILURE
+Epochs Run: 35
+Minimum Loss Achieved: 0.3646
+Final Loss (Best Model): 0.3667
+Final Output Rate (Best Model): 55.03 Hz
+Final STDP Learning Rate: 0.0500
+Average Epoch Time: 4.318 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 155 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:28:32 ---
+Overall Result: FAILURE
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 55.12 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 4.403 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 14 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:29:32 ---
+Overall Result: SUCCESS
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 50.24 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 4.351 seconds
+Final Inference Check Time: 0.226 seconds
+Generalization Test Time: 0.42 seconds
+Total Runtime: 15 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=29.80 Hz, Error=0.66%
+  Input=4, Target=60.0 Hz, Output=61.16 Hz, Error=1.93%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:34:29 ---
+Overall Result: SUCCESS
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 50.24 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 4.053 seconds
+Final Inference Check Time: 0.198 seconds
+Generalization Test Time: 0.37 seconds
+Total Runtime: 14 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=29.80 Hz, Error=0.66%
+  Input=4, Target=60.0 Hz, Output=61.16 Hz, Error=1.93%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:35:37 ---
+Overall Result: SUCCESS
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 50.24 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 3.886 seconds
+Final Inference Check Time: 0.187 seconds
+Generalization Test Time: 0.36 seconds
+Total Runtime: 13 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=29.80 Hz, Error=0.66%
+  Input=4, Target=60.0 Hz, Output=61.16 Hz, Error=1.93%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:38:32 ---
+Overall Result: SUCCESS
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 50.24 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 6.313 seconds
+Final Inference Check Time: 0.186 seconds
+Generalization Test Time: 0.38 seconds
+Total Runtime: 21 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=29.80 Hz, Error=0.66%
+  Input=4, Target=60.0 Hz, Output=61.16 Hz, Error=1.93%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:40:09 ---
+Overall Result: SUCCESS
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 50.24 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 4.001 seconds
+Final Inference Check Time: 0.198 seconds
+Generalization Test Time: 0.36 seconds
+Total Runtime: 14 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=29.80 Hz, Error=0.66%
+  Input=4, Target=60.0 Hz, Output=61.16 Hz, Error=1.93%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:43:58 ---
+Overall Result: FAILURE
+Epochs Run: 1
+Minimum Loss Achieved: 0.1047
+Final Loss (Best Model): 0.1047
+Final Output Rate (Best Model): 54.80 Hz
+--- Analysis Log: 2025-04-04 05:44:46 ---
+Overall Result: FAILURE
+Epochs Run: 1
+Minimum Loss Achieved: 0.1047
+Final Loss (Best Model): 0.1047
+Final Output Rate (Best Model): 54.80 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 4.055 seconds
+Final Inference Check Time: 0.000 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 5 seconds
+Generalization Test Results:
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:45:52 ---
+Overall Result: SUCCESS
+Epochs Run: 3
+Minimum Loss Achieved: 0.0030
+Final Loss (Best Model): 0.0030
+Final Output Rate (Best Model): 50.24 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 4.048 seconds
+Final Inference Check Time: 0.193 seconds
+Generalization Test Time: 0.41 seconds
+Total Runtime: 14 seconds
+Generalization Test Results:
+  Input=1, Target=30.0 Hz, Output=29.80 Hz, Error=0.66%
+  Input=4, Target=60.0 Hz, Output=61.16 Hz, Error=1.93%
+-----------------------------------------
+
+--- Analysis Log: 2025-04-04 05:50:08 ---
+Overall Result: FAILURE
+Epochs Run: 4
+Minimum Loss Achieved: 0.0025
+Final Loss (Best Model): 0.0025
+Final Output Rate (Best Model): 55.17 Hz
+Final STDP Learning Rate: 0.0300
+Average Epoch Time: 3.284 seconds
+Final Inference Check Time: 0.206 seconds
+Generalization Test Time: 0.00 seconds
+Total Runtime: 15 seconds
+Generalization Test Results:
+-----------------------------------------
+
